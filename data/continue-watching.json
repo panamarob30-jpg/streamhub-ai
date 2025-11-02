@@ -1,0 +1,26 @@
+{
+  "updated": "2024-01-15",
+  "items": [
+    {
+      "title": "Breaking Bad",
+      "service": "Netflix",
+      "type": "Series",
+      "progress": 65,
+      "note": "S3 E7 - One Minute"
+    },
+    {
+      "title": "The Last of Us",
+      "service": "Max",
+      "type": "Series",
+      "progress": 40,
+      "note": "S1 E4"
+    },
+    {
+      "title": "Severance",
+      "service": "Apple TV+",
+      "type": "Series",
+      "progress": 85,
+      "note": "S1 E9 - Almost done!"
+    }
+  ]
+}

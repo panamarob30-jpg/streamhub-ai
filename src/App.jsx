@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { aiSearch, getAIRecommendations } from "./api";
 
 const DEFAULT_SERVICES = [
   { id: "netflix", name: "Netflix", url: "https://www.netflix.com/browse" },
@@ -68,6 +69,11 @@ export default function App() {
   const [cwData, setCwData] = useState(null);
   const [loadingNew, setLoadingNew] = useState(false);
   const [loadingCW, setLoadingCW] = useState(false);
+  const [aiSearchResults, setAiSearchResults] = useState(null);
+  const [aiSearchLoading, setAiSearchLoading] = useState(false);
+  const [aiRecommendations, setAiRecommendations] = useState(null);
+  const [aiRecsLoading, setAiRecsLoading] = useState(false);
+  const [searchMode, setSearchMode] = useState("unified"); // "unified" or "ai"
 
   const activeServices = useMemo(
     () => services.filter((s) => enabled[s.id]),
@@ -122,6 +128,47 @@ export default function App() {
     for (const u of tabs) window.open(u, "_blank");
   }
 
+  async function runAISearch(e) {
+    e?.preventDefault?.();
+    if (!query.trim()) return;
+
+    setAiSearchLoading(true);
+    setAiSearchResults(null);
+
+    try {
+      const serviceNames = activeServices.map((s) => s.name);
+      const results = await aiSearch(query, serviceNames);
+      setAiSearchResults(results);
+    } catch (error) {
+      console.error("AI Search failed:", error);
+      alert("AI Search failed. Make sure the backend is running and API key is configured.");
+    } finally {
+      setAiSearchLoading(false);
+    }
+  }
+
+  async function loadAIRecommendations() {
+    setAiRecsLoading(true);
+    setAiRecommendations(null);
+
+    try {
+      const serviceNames = activeServices.map((s) => s.name);
+      const watchHistory = (cwData?.items || []).map((item) => ({
+        title: item.title,
+        service: item.service,
+        type: item.type || "Unknown"
+      }));
+
+      const results = await getAIRecommendations(watchHistory, {}, serviceNames);
+      setAiRecommendations(results);
+    } catch (error) {
+      console.error("AI Recommendations failed:", error);
+      alert("AI Recommendations failed. Make sure the backend is running and API key is configured.");
+    } finally {
+      setAiRecsLoading(false);
+    }
+  }
+
   return (
     <div className="wrap">
       <header className="header">
@@ -135,21 +182,77 @@ export default function App() {
         </div>
       </header>
 
-      {/* Unified Search */}
+      {/* Search Section */}
       <section className="section">
-        <form className="search" onSubmit={runUnifiedSearch}>
+        <div className="row" style={{ marginBottom: "1rem" }}>
+          <h2>Search</h2>
+          <div className="chips">
+            <button
+              className={`btn ${searchMode === "unified" ? "primary" : "ghost"}`}
+              onClick={() => setSearchMode("unified")}
+            >
+              Multi-Tab Search
+            </button>
+            <button
+              className={`btn ${searchMode === "ai" ? "primary" : "ghost"}`}
+              onClick={() => setSearchMode("ai")}
+            >
+              AI Search
+            </button>
+          </div>
+        </div>
+        <form className="search" onSubmit={searchMode === "ai" ? runAISearch : runUnifiedSearch}>
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search a title once. We’ll open JustWatch + providers"
+            placeholder={
+              searchMode === "ai"
+                ? "Try: 'Something like Inception but happier' or 'Sci-fi series under 30 min episodes'"
+                : "Search a title once. We'll open JustWatch + providers"
+            }
           />
-          <button className="btn primary" type="submit">Unified Search</button>
+          <button className="btn primary" type="submit" disabled={aiSearchLoading}>
+            {searchMode === "ai" ? (aiSearchLoading ? "Thinking..." : "AI Search") : "Unified Search"}
+          </button>
         </form>
-        <div className="chips">
-          <Badge>Opens multiple tabs</Badge>
-          <Badge>No logins stored</Badge>
-          <Badge>Local settings only</Badge>
-        </div>
+        {searchMode === "unified" && (
+          <div className="chips">
+            <Badge>Opens multiple tabs</Badge>
+            <Badge>No logins stored</Badge>
+            <Badge>Local settings only</Badge>
+          </div>
+        )}
+
+        {/* AI Search Results */}
+        {searchMode === "ai" && aiSearchResults && (
+          <div className="ai-results">
+            <div className="ai-card">
+              <h3>AI Understanding</h3>
+              <p className="muted">{aiSearchResults.interpretation}</p>
+              {aiSearchResults.attributes && (
+                <div className="chips">
+                  {aiSearchResults.attributes.genre?.map((g, i) => (
+                    <Badge key={i}>{g}</Badge>
+                  ))}
+                  {aiSearchResults.attributes.mood && <Badge>{aiSearchResults.attributes.mood}</Badge>}
+                </div>
+              )}
+            </div>
+            <h3>Recommendations</h3>
+            <div className="list">
+              {aiSearchResults.recommendations?.map((rec, i) => (
+                <div key={i} className="card item">
+                  <div className="row">
+                    <div className="title">{rec.title}</div>
+                    <Badge>{rec.type}</Badge>
+                  </div>
+                  <div className="muted">{rec.service} {rec.year && `• ${rec.year}`}</div>
+                  <div className="muted small">{rec.match}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       {/* Services Grid */}
@@ -170,6 +273,56 @@ export default function App() {
             </a>
           ))}
         </div>
+      </section>
+
+      {/* AI Recommendations */}
+      <section className="section">
+        <div className="row">
+          <h2>AI Recommendations</h2>
+          <button className="btn primary" onClick={loadAIRecommendations} disabled={aiRecsLoading}>
+            {aiRecsLoading ? "Analyzing..." : "Get AI Suggestions"}
+          </button>
+        </div>
+        <div className="muted small">
+          Personalized recommendations based on your watching patterns
+        </div>
+        {aiRecommendations && (
+          <>
+            <div className="ai-card" style={{ marginTop: "1rem" }}>
+              <h3>Your Taste Profile</h3>
+              <p className="muted">{aiRecommendations.analysis}</p>
+              {aiRecommendations.moodProfile && (
+                <div className="muted small" style={{ marginTop: "0.5rem" }}>
+                  <strong>Mood:</strong> {aiRecommendations.moodProfile}
+                </div>
+              )}
+            </div>
+            <div className="list">
+              {aiRecommendations.recommendations?.map((rec, i) => (
+                <div key={i} className="card item">
+                  <div className="row">
+                    <div className="title">{rec.title}</div>
+                    <div className="chips">
+                      <Badge>{rec.type}</Badge>
+                      {rec.hiddenGem && <Badge>Hidden Gem</Badge>}
+                      {rec.confidence && <Badge>{rec.confidence}% match</Badge>}
+                    </div>
+                  </div>
+                  <div className="muted">{rec.service} {rec.year && `• ${rec.year}`}</div>
+                  {rec.genre && (
+                    <div className="chips">
+                      {rec.genre.map((g, gi) => (
+                        <Badge key={gi}>{g}</Badge>
+                      ))}
+                    </div>
+                  )}
+                  <div className="muted small">{rec.reasoning}</div>
+                  {rec.mood && <div className="muted small">Mood: {rec.mood}</div>}
+                </div>
+              ))}
+            </div>
+          </>
+        )}
       </section>
 
       {/* Continue Watching */}

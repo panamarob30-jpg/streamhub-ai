@@ -1,0 +1,29 @@
+{
+  "updated": "2024-01-15",
+  "items": [
+    {
+      "title": "Dune: Part Two",
+      "service": "Max",
+      "type": "Movie",
+      "note": "Epic sci-fi sequel now streaming"
+    },
+    {
+      "title": "Shogun",
+      "service": "Hulu",
+      "type": "Series",
+      "note": "New historical drama - Episode 1 available"
+    },
+    {
+      "title": "3 Body Problem",
+      "service": "Netflix",
+      "type": "Series",
+      "note": "Sci-fi mystery series premiere"
+    },
+    {
+      "title": "Fallout",
+      "service": "Prime Video",
+      "type": "Series",
+      "note": "Post-apocalyptic adventure based on the game"
+    }
+  ]
+}
