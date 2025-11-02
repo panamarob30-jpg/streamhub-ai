@@ -1,8 +1,19 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const anthropic = new Anthropic({
-  apiKey: process.env.ANTHROPIC_API_KEY,
-});
+// Lazy-load the Anthropic client to ensure env vars are loaded first
+let anthropic = null;
+
+function getAnthropicClient() {
+  if (!anthropic) {
+    if (!process.env.ANTHROPIC_API_KEY) {
+      throw new Error('ANTHROPIC_API_KEY environment variable is not set');
+    }
+    anthropic = new Anthropic({
+      apiKey: process.env.ANTHROPIC_API_KEY,
+    });
+  }
+  return anthropic;
+}
 
 const STREAMING_SERVICES = [
   'Netflix', 'Prime Video', 'Max', 'Hulu', 'Disney+', 'Apple TV+',
@@ -54,7 +65,8 @@ Respond in JSON format:
 }`;
 
   try {
-    const message = await anthropic.messages.create({
+    const client = getAnthropicClient();
+    const message = await client.messages.create({
       model: 'claude-3-haiku-20240307',
       max_tokens: 2000,
       messages: [{
@@ -134,7 +146,8 @@ Respond in JSON format:
 }`;
 
   try {
-    const message = await anthropic.messages.create({
+    const client = getAnthropicClient();
+    const message = await client.messages.create({
       model: 'claude-3-haiku-20240307',
       max_tokens: 2500,
       messages: [{
