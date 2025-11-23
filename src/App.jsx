@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { aiSearch, getAIRecommendations } from "./api";
+import { getKodiService } from "./kodi-service";
 
 const DEFAULT_SERVICES = [
   { id: "netflix", name: "Netflix", url: "https://www.netflix.com/browse" },
@@ -74,6 +75,18 @@ export default function App() {
   const [aiRecommendations, setAiRecommendations] = useState(null);
   const [aiRecsLoading, setAiRecsLoading] = useState(false);
   const [searchMode, setSearchMode] = useState("unified"); // "unified" or "ai"
+  const [tvMode, setTvMode] = useLocalState("streamhub.tvMode", false);
+  const [isListening, setIsListening] = useState(false);
+
+  // Kodi Integration
+  const [kodiHost, setKodiHost] = useLocalState("streamhub.kodiHost", "localhost");
+  const [kodiPort, setKodiPort] = useLocalState("streamhub.kodiPort", "8080");
+  const [kodiUsername, setKodiUsername] = useLocalState("streamhub.kodiUsername", "");
+  const [kodiPassword, setKodiPassword] = useLocalState("streamhub.kodiPassword", "");
+  const [kodiConnected, setKodiConnected] = useState(false);
+  const [kodiLibrary, setKodiLibrary] = useState([]);
+  const [kodiLoading, setKodiLoading] = useState(false);
+  const [showKodiSettings, setShowKodiSettings] = useState(false);
 
   const activeServices = useMemo(
     () => services.filter((s) => enabled[s.id]),
@@ -101,6 +114,41 @@ export default function App() {
       setLoadingCW(false);
     })();
   }, []);
+
+  // D-pad/Keyboard navigation for TV mode
+  useEffect(() => {
+    if (!tvMode) return;
+
+    const handleKeyDown = (e) => {
+      const focusable = Array.from(document.querySelectorAll('button, a, input, [tabindex="0"]'));
+      const currentIndex = focusable.indexOf(document.activeElement);
+
+      switch (e.key) {
+        case "ArrowDown":
+        case "ArrowRight":
+          e.preventDefault();
+          if (currentIndex < focusable.length - 1) {
+            focusable[currentIndex + 1]?.focus();
+          }
+          break;
+        case "ArrowUp":
+        case "ArrowLeft":
+          e.preventDefault();
+          if (currentIndex > 0) {
+            focusable[currentIndex - 1]?.focus();
+          }
+          break;
+        case "Enter":
+          // Let default behavior handle it
+          break;
+        default:
+          break;
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [tvMode]);
 
   function toggleService(id) {
     setEnabled((p) => ({ ...p, [id]: !p[id] }));
@@ -169,14 +217,97 @@ export default function App() {
     }
   }
 
+  function startVoiceSearch() {
+    if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
+      alert("Voice search not supported in this browser. Try Chrome or Edge.");
+      return;
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+
+    recognition.onstart = () => setIsListening(true);
+    recognition.onend = () => setIsListening(false);
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      setQuery(transcript);
+      setSearchMode("ai"); // Voice search uses AI by default
+    };
+
+    recognition.onerror = (event) => {
+      console.error("Voice recognition error:", event.error);
+      setIsListening(false);
+      alert(`Voice search error: ${event.error}`);
+    };
+
+    recognition.start();
+  }
+
+  // Kodi Functions
+  async function testKodiConnection() {
+    setKodiLoading(true);
+    try {
+      const kodi = getKodiService(kodiHost, kodiPort, kodiUsername, kodiPassword);
+      const connected = await kodi.testConnection();
+      setKodiConnected(connected);
+
+      if (connected) {
+        alert("✅ Connected to Kodi successfully!");
+        await loadKodiLibrary();
+      } else {
+        alert("❌ Could not connect to Kodi. Check your settings and make sure Kodi is running with web server enabled.");
+      }
+    } catch (error) {
+      console.error("Kodi connection failed:", error);
+      setKodiConnected(false);
+      alert("❌ Connection failed: " + error.message);
+    } finally {
+      setKodiLoading(false);
+    }
+  }
+
+  async function loadKodiLibrary() {
+    setKodiLoading(true);
+    try {
+      const kodi = getKodiService(kodiHost, kodiPort, kodiUsername, kodiPassword);
+      const [movies, tvshows] = await Promise.all([
+        kodi.getMovies(),
+        kodi.getTVShows()
+      ]);
+
+      const combined = [
+        ...movies.map(m => ({ ...m, mediaType: 'movie' })),
+        ...tvshows.map(t => ({ ...t, mediaType: 'tvshow' }))
+      ];
+
+      setKodiLibrary(combined);
+      console.log(`Loaded ${movies.length} movies and ${tvshows.length} TV shows from Kodi`);
+    } catch (error) {
+      console.error("Failed to load Kodi library:", error);
+      alert("Failed to load Kodi library: " + error.message);
+    } finally {
+      setKodiLoading(false);
+    }
+  }
+
   return (
-    <div className="wrap">
+    <div className={`wrap ${tvMode ? "tv-mode" : ""}`}>
       <header className="header">
         <div>
           <h1>StreamHub</h1>
-          <div className="sub">All your streaming in one home screen (plain CSS)</div>
+          <div className="sub">All your streaming in one home screen {tvMode ? "• TV Mode" : ""}</div>
         </div>
         <div className="header-actions">
+          <button
+            className={`btn ${tvMode ? "primary" : "ghost"}`}
+            onClick={() => setTvMode(!tvMode)}
+            title="Toggle TV Mode - larger UI and remote control navigation"
+          >
+            {tvMode ? "📺 TV Mode ON" : "📺 TV Mode"}
+          </button>
           <a className="btn ghost" href="/data/new-this-week.json" target="_blank" rel="noreferrer">Feed JSON</a>
           <button className="btn ghost" onClick={addService}>Add Service</button>
         </div>
@@ -211,6 +342,15 @@ export default function App() {
                 : "Search a title once. We'll open JustWatch + providers"
             }
           />
+          <button
+            className="btn ghost"
+            type="button"
+            onClick={startVoiceSearch}
+            disabled={isListening}
+            title="Voice Search"
+          >
+            {isListening ? "🎤 Listening..." : "🎤 Voice"}
+          </button>
           <button className="btn primary" type="submit" disabled={aiSearchLoading}>
             {searchMode === "ai" ? (aiSearchLoading ? "Thinking..." : "AI Search") : "Unified Search"}
           </button>
@@ -251,6 +391,137 @@ export default function App() {
                 </div>
               ))}
             </div>
+          </div>
+        )}
+      </section>
+
+      {/* Kodi Library Section */}
+      <section className="section">
+        <div className="row">
+          <h2>Kodi Library</h2>
+          <button
+            className={`btn ${kodiConnected ? "primary" : "ghost"}`}
+            onClick={() => setShowKodiSettings(!showKodiSettings)}
+          >
+            {kodiConnected ? "✓ Kodi Connected" : "⚙️ Connect to Kodi"}
+          </button>
+        </div>
+
+        {/* Kodi Settings Panel */}
+        {showKodiSettings && (
+          <div className="card" style={{ marginTop: "1rem", padding: "1.5rem" }}>
+            <h3>Kodi Connection Settings</h3>
+            <div style={{ display: "grid", gap: "1rem", marginTop: "1rem" }}>
+              <div>
+                <label className="muted small">Host</label>
+                <input
+                  type="text"
+                  value={kodiHost}
+                  onChange={(e) => setKodiHost(e.target.value)}
+                  placeholder="localhost or IP address"
+                  style={{ width: "100%", marginTop: "0.5rem", padding: "12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--card)", color: "var(--fg)" }}
+                />
+              </div>
+              <div>
+                <label className="muted small">Port</label>
+                <input
+                  type="text"
+                  value={kodiPort}
+                  onChange={(e) => setKodiPort(e.target.value)}
+                  placeholder="8080"
+                  style={{ width: "100%", marginTop: "0.5rem", padding: "12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--card)", color: "var(--fg)" }}
+                />
+              </div>
+              <div>
+                <label className="muted small">Username (optional)</label>
+                <input
+                  type="text"
+                  value={kodiUsername}
+                  onChange={(e) => setKodiUsername(e.target.value)}
+                  placeholder="kodi"
+                  style={{ width: "100%", marginTop: "0.5rem", padding: "12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--card)", color: "var(--fg)" }}
+                />
+              </div>
+              <div>
+                <label className="muted small">Password (optional)</label>
+                <input
+                  type="password"
+                  value={kodiPassword}
+                  onChange={(e) => setKodiPassword(e.target.value)}
+                  placeholder="password"
+                  style={{ width: "100%", marginTop: "0.5rem", padding: "12px", borderRadius: "8px", border: "1px solid var(--line)", background: "var(--card)", color: "var(--fg)" }}
+                />
+              </div>
+            </div>
+            <div style={{ marginTop: "1rem", display: "flex", gap: "0.5rem" }}>
+              <button className="btn primary" onClick={testKodiConnection} disabled={kodiLoading}>
+                {kodiLoading ? "Connecting..." : "Connect to Kodi"}
+              </button>
+              {kodiConnected && (
+                <button className="btn ghost" onClick={loadKodiLibrary} disabled={kodiLoading}>
+                  {kodiLoading ? "Loading..." : "Refresh Library"}
+                </button>
+              )}
+            </div>
+            <p className="muted small" style={{ marginTop: "1rem" }}>
+              Make sure Kodi's web server is enabled in Settings → Services → Control → Allow remote control via HTTP
+            </p>
+          </div>
+        )}
+
+        {/* Kodi Library Grid */}
+        {kodiLibrary.length > 0 && (
+          <div className="media-grid" style={{ marginTop: "2rem" }}>
+            {kodiLibrary.slice(0, 20).map((media, i) => (
+              <div key={`kodi-${i}`} className="media-card">
+                {media.thumbnail ? (
+                  <div
+                    className="media-poster"
+                    style={{
+                      backgroundImage: `url(${media.thumbnail})`,
+                      backgroundSize: "cover",
+                      backgroundPosition: "center",
+                      height: "300px",
+                      borderRadius: "12px 12px 0 0"
+                    }}
+                  />
+                ) : (
+                  <div
+                    className="media-poster-placeholder"
+                    style={{
+                      height: "300px",
+                      background: "linear-gradient(135deg, #3a3f52, #232838)",
+                      borderRadius: "12px 12px 0 0",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      fontSize: "48px"
+                    }}
+                  >
+                    🎬
+                  </div>
+                )}
+                <div className="media-info" style={{ padding: "1rem" }}>
+                  <div className="title" style={{ fontSize: "16px" }}>{media.title}</div>
+                  {media.year && <div className="muted small">{media.year}</div>}
+                  {media.rating && (
+                    <div className="muted small">⭐ {media.rating.toFixed(1)}/10</div>
+                  )}
+                  {media.genre && media.genre.length > 0 && (
+                    <div className="muted small">{media.genre.slice(0, 2).join(", ")}</div>
+                  )}
+                  <div className="badge" style={{ marginTop: "0.5rem" }}>
+                    {media.mediaType === 'movie' ? 'Movie' : 'TV Show'}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {kodiLibrary.length === 0 && !showKodiSettings && (
+          <div className="muted" style={{ marginTop: "1rem" }}>
+            Connect to your Kodi library to see your movies and TV shows with artwork and metadata
           </div>
         )}
       </section>

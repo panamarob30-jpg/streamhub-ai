@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # Kodi Headless - Media Library Manager
+  kodi:
+    image: linuxserver/kodi-headless:latest
+    container_name: streamhub-kodi
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - TZ=America/New_York  # Change to your timezone
+    volumes:
+      # Config storage
+      - ./kodi-config:/config
+
+      # Your media folders - UPDATE THESE PATHS!
+      - /volume1/movies:/media/movies:ro
+      - /volume1/tv-shows:/media/tv:ro
+      - /volume1/music:/media/music:ro
+
+      # Optional: If you have other media locations
+      # - /volume1/videos:/media/videos:ro
+    ports:
+      - "8080:8080"  # Kodi web interface
+      - "9090:9090"  # Kodi websocket
+      - "8081:8081"  # Kodi event server
+    restart: unless-stopped
+    networks:
+      - streamhub-network
+
+  # StreamHub AI - Unified Streaming Hub
+  streamhub:
+    build: .
+    container_name: streamhub-ai
+    depends_on:
+      - kodi
+    environment:
+      - NODE_ENV=production
+      - PORT=3001
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+
+      # Auto-configure Kodi connection
+      - KODI_HOST=kodi
+      - KODI_PORT=8080
+    volumes:
+      # Data directory for feeds
+      - ./data:/app/server/public/data:rw
+    ports:
+      - "3001:3001"  # StreamHub web interface
+    restart: unless-stopped
+    networks:
+      - streamhub-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3001/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+networks:
+  streamhub-network:
+    driver: bridge
+
+volumes:
+  kodi-config:
+  data:

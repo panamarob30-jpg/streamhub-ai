@@ -28,3 +28,10 @@ server/.env
 *.njsproj
 *.sln
 *.sw?
+
+# Kodi
+kodi-config/
+kodi-data/
+
+# Electron build output
+release/

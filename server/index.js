@@ -67,10 +67,12 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Start server
-app.listen(PORT, () => {
+// Start server - listen on all network interfaces for TV/remote access
+app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 StreamHub AI running on http://localhost:${PORT}`);
   console.log(`📡 Health check: http://localhost:${PORT}/health`);
   console.log(`🎬 Frontend: http://localhost:${PORT}`);
   console.log(`🤖 API: http://localhost:${PORT}/api/*`);
+  console.log(`\n📺 TV Access: Connect your Smart TV browser to http://YOUR_IP:${PORT}`);
+  console.log(`   To find your IP: run 'hostname -I' or 'ipconfig' (Windows)`);
 });
